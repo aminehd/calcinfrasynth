@@ -50,7 +50,7 @@ class TrainingJob(Chart):
     def _labels(self, component):
         return {
             "app.kubernetes.io/name": component,
-            "app.kubernetes.io/part-of": "llmmesh",
+            "app.kubernetes.io/part-of": "calcmesh",
         }
 
     def _config_map(self, id, name, body):

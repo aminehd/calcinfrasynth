@@ -8,12 +8,12 @@ from charts.training_job import TrainingJob
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--namespace", default="llmmesh-dev")
+    p.add_argument("--namespace", default="calcmesh-dev")
     p.add_argument("--image-tag", default="dev")
     p.add_argument("--workers", type=int, default=3)
     p.add_argument("--out", default="../dist")
-    p.add_argument("--worker-envoy", default="../llmcontrolplane/config/sidecar-worker.yaml")
-    p.add_argument("--coordinator-envoy", default="../llmcontrolplane/config/sidecar-coordinator.yaml")
+    p.add_argument("--worker-envoy", default="../calccontrolplane/config/sidecar-worker.yaml")
+    p.add_argument("--coordinator-envoy", default="../calccontrolplane/config/sidecar-coordinator.yaml")
     args = p.parse_args()
 
     worker_path = Path(args.worker_envoy)
@@ -26,7 +26,7 @@ def main():
     app = App(outdir=args.out)
     TrainingJob(
         app,
-        "llmmesh",
+        "calcmesh",
         namespace=args.namespace,
         image_tag=args.image_tag,
         workers=args.workers,

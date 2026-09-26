@@ -1,1 +1,1 @@
-# llmsynth — topology in, manifests out.
+# calcsynth — topology in, manifests out.
