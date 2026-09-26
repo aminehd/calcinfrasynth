@@ -12,11 +12,16 @@ def main():
     p.add_argument("--image-tag", default="dev")
     p.add_argument("--workers", type=int, default=3)
     p.add_argument("--out", default="../dist")
-    p.add_argument("--envoy-config", default="../llmcontrolplane/config/sidecar.yaml")
+    p.add_argument("--worker-envoy", default="../llmcontrolplane/config/sidecar-worker.yaml")
+    p.add_argument("--coordinator-envoy", default="../llmcontrolplane/config/sidecar-coordinator.yaml")
     args = p.parse_args()
 
-    envoy_path = Path(args.envoy_config)
-    envoy_config = envoy_path.read_text() if envoy_path.exists() else DEFAULT_ENVOY
+    worker_path = Path(args.worker_envoy)
+    coordinator_path = Path(args.coordinator_envoy)
+    worker_envoy = worker_path.read_text() if worker_path.exists() else DEFAULT_WORKER_ENVOY
+    coordinator_envoy = (
+        coordinator_path.read_text() if coordinator_path.exists() else DEFAULT_COORDINATOR_ENVOY
+    )
 
     app = App(outdir=args.out)
     TrainingJob(
@@ -25,13 +30,14 @@ def main():
         namespace=args.namespace,
         image_tag=args.image_tag,
         workers=args.workers,
-        envoy_config=envoy_config,
+        worker_envoy=worker_envoy,
+        coordinator_envoy=coordinator_envoy,
     )
     app.synth()
     print(f"synthed {args.workers} workers, tag {args.image_tag}, ns {args.namespace} -> {args.out}")
 
 
-DEFAULT_ENVOY = """\
+DEFAULT_WORKER_ENVOY = """\
 admin:
   address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
 static_resources:
@@ -68,6 +74,44 @@ static_resources:
               - endpoint:
                   address:
                     socket_address: { address: coordinator, port_value: 8080 }
+"""
+
+DEFAULT_COORDINATOR_ENVOY = """\
+admin:
+  address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+static_resources:
+  listeners:
+    - name: inbound
+      address: { socket_address: { address: 0.0.0.0, port_value: 8080 } }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress
+                route_config:
+                  name: local
+                  virtual_hosts:
+                    - name: app
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: app, timeout: 5s }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: app
+      type: STATIC
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: app
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: 127.0.0.1, port_value: 8081 }
 """
 
 if __name__ == "__main__":
