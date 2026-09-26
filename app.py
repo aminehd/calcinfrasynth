@@ -3,7 +3,7 @@ from pathlib import Path
 
 from cdk8s import App
 
-from charts.training_job import TrainingJob
+from charts.calc_job import CalcMesh
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
     )
 
     app = App(outdir=args.out)
-    TrainingJob(
+    CalcMesh(
         app,
         "calcmesh",
         namespace=args.namespace,

@@ -8,7 +8,7 @@ COORDINATOR_CONFIG_MAP = "envoy-coordinator"
 APP_PORT = 8081
 
 
-class TrainingJob(Chart):
+class CalcMesh(Chart):
     def __init__(self, scope, id, *, namespace, image_tag, workers, worker_envoy, coordinator_envoy):
         super().__init__(scope, id, namespace=namespace)
         self.ns = namespace
@@ -21,6 +21,18 @@ class TrainingJob(Chart):
 
         self._config_map("worker-envoy-config", WORKER_CONFIG_MAP, worker_envoy)
         self._config_map("coordinator-envoy-config", COORDINATOR_CONFIG_MAP, coordinator_envoy)
+
+        for calc in ("adder", "multiplier"):
+            self._service(calc, 8080)
+            self._deployment(
+                calc,
+                f"{calc}:{image_tag}",
+                replicas=1,
+                port=APP_PORT,
+                sidecar=COORDINATOR_CONFIG_MAP,
+                sidecar_port=8080,
+                env={"PORT": str(APP_PORT)},
+            )
 
         self._service("coordinator", 8080)
         self._deployment(
@@ -44,7 +56,7 @@ class TrainingJob(Chart):
             port=8081,
             sidecar=WORKER_CONFIG_MAP,
             sidecar_port=9001,
-            env={"COORDINATOR_URL": "http://127.0.0.1:9001"},
+            env={"CALC_URL": "http://127.0.0.1:9001"},
         )
 
     def _labels(self, component):
