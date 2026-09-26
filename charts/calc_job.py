@@ -3,13 +3,14 @@ from imports import k8s
 
 from charts.sidecar import config_volume, envoy_container
 
-WORKER_CONFIG_MAP = "envoy-worker"
 COORDINATOR_CONFIG_MAP = "envoy-coordinator"
+SERVICE_CONFIG_MAP = "envoy-service"
+COORDINATOR_NODE_PORT = 30000
 APP_PORT = 8081
 
 
 class CalcMesh(Chart):
-    def __init__(self, scope, id, *, namespace, image_tag, workers, worker_envoy, coordinator_envoy):
+    def __init__(self, scope, id, *, namespace, image_tag, worker_envoy, coordinator_envoy):
         super().__init__(scope, id, namespace=namespace)
         self.ns = namespace
 
@@ -19,8 +20,9 @@ class CalcMesh(Chart):
             metadata=k8s.ObjectMeta(name=namespace, labels=self._labels("namespace")),
         )
 
-        self._config_map("worker-envoy-config", WORKER_CONFIG_MAP, worker_envoy)
-        self._config_map("coordinator-envoy-config", COORDINATOR_CONFIG_MAP, coordinator_envoy)
+        self._config_map("coordinator-envoy-config", COORDINATOR_CONFIG_MAP, worker_envoy)
+        self._config_map("service-envoy-config", SERVICE_CONFIG_MAP, coordinator_envoy)
+
 
         for calc in ("adder", "multiplier"):
             self._service(calc, 8080)
@@ -29,35 +31,29 @@ class CalcMesh(Chart):
                 f"{calc}:{image_tag}",
                 replicas=1,
                 port=APP_PORT,
-                sidecar=COORDINATOR_CONFIG_MAP,
+                sidecar=SERVICE_CONFIG_MAP,
                 sidecar_port=8080,
                 env={"PORT": str(APP_PORT)},
             )
 
-        self._service("coordinator", 8080)
+        self._service("coordinator", APP_PORT, node_port=COORDINATOR_NODE_PORT)
         self._deployment(
             "coordinator",
             f"coordinator:{image_tag}",
             replicas=1,
             port=APP_PORT,
             sidecar=COORDINATOR_CONFIG_MAP,
-            sidecar_port=8080,
-            env={"PORT": str(APP_PORT), "WORKERS": str(workers)},
+            sidecar_port=9001,
+            env={
+                "PORT": str(APP_PORT),
+                "CALC_URL": "http://127.0.0.1:9001",
+                "CONTROL_PLANE_URL": "http://controlplane:18000",
+            },
         )
 
         self._service("controlplane", 18000)
         self._deployment("controlplane", f"controlplane:{image_tag}", replicas=1, port=18000)
 
-        self._service("worker", 8081)
-        self._deployment(
-            "worker",
-            f"worker:{image_tag}",
-            replicas=workers,
-            port=8081,
-            sidecar=WORKER_CONFIG_MAP,
-            sidecar_port=9001,
-            env={"CALC_URL": "http://127.0.0.1:9001"},
-        )
 
     def _labels(self, component):
         return {
@@ -102,16 +98,20 @@ class CalcMesh(Chart):
             ),
         )
 
-    def _service(self, name, port):
+    def _service(self, name, port, node_port=None):
         k8s.KubeService(
             self,
             f"{name}-service",
             metadata=k8s.ObjectMeta(name=name, namespace=self.ns, labels=self._labels(name)),
             spec=k8s.ServiceSpec(
+                type="NodePort" if node_port else None,
                 selector=self._labels(name),
                 ports=[
                     k8s.ServicePort(
-                        port=port, target_port=k8s.IntOrString.from_number(port), name="http"
+                        port=port,
+                        target_port=k8s.IntOrString.from_number(port),
+                        node_port=node_port,
+                        name="http",
                     )
                 ],
             ),

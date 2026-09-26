@@ -10,14 +10,13 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--namespace", default="calcmesh-dev")
     p.add_argument("--image-tag", default="dev")
-    p.add_argument("--workers", type=int, default=3)
     p.add_argument("--out", default="../dist")
-    p.add_argument("--worker-envoy", default="../calccontrolplane/config/sidecar-worker.yaml")
-    p.add_argument("--coordinator-envoy", default="../calccontrolplane/config/sidecar-coordinator.yaml")
+    p.add_argument("--coordinator-envoy", default="../calccontrolplane/config/coordinator-envoy.yaml")
+    p.add_argument("--service-envoy", default="../calccontrolplane/config/service-envoy.yaml")
     args = p.parse_args()
 
-    worker_path = Path(args.worker_envoy)
-    coordinator_path = Path(args.coordinator_envoy)
+    worker_path = Path(args.coordinator_envoy)
+    coordinator_path = Path(args.service_envoy)
     worker_envoy = worker_path.read_text() if worker_path.exists() else DEFAULT_WORKER_ENVOY
     coordinator_envoy = (
         coordinator_path.read_text() if coordinator_path.exists() else DEFAULT_COORDINATOR_ENVOY
@@ -29,12 +28,11 @@ def main():
         "calcmesh",
         namespace=args.namespace,
         image_tag=args.image_tag,
-        workers=args.workers,
         worker_envoy=worker_envoy,
         coordinator_envoy=coordinator_envoy,
     )
     app.synth()
-    print(f"synthed {args.workers} workers, tag {args.image_tag}, ns {args.namespace} -> {args.out}")
+    print(f"synthed tag {args.image_tag}, ns {args.namespace} -> {args.out}")
 
 
 DEFAULT_WORKER_ENVOY = """\
