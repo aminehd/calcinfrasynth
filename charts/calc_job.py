@@ -1,18 +1,26 @@
 from cdk8s import Chart
 from imports import k8s
 
-from charts.sidecar import config_volume, envoy_container
+from charts.sidecar import (
+    config_volume,
+    envoy_container,
+    syncer_container,
+    xds_seed_container,
+    xds_volume,
+)
 
 COORDINATOR_CONFIG_MAP = "envoy-coordinator"
-SERVICE_CONFIG_MAP = "envoy-service"
+CALCULATOR_CONFIG_MAP = "envoy-calculator"
+SERVICES_CONFIG_MAP = "services-config"
 COORDINATOR_NODE_PORT = 30000
 APP_PORT = 8081
 
 
 class CalcMesh(Chart):
-    def __init__(self, scope, id, *, namespace, image_tag, worker_envoy, coordinator_envoy):
+    def __init__(self, scope, id, *, namespace, image_tag, coordinator_bootstrap, calculator_envoy, lds, cds, services):
         super().__init__(scope, id, namespace=namespace)
         self.ns = namespace
+        self.image_tag = image_tag
 
         k8s.KubeNamespace(
             self,
@@ -20,9 +28,19 @@ class CalcMesh(Chart):
             metadata=k8s.ObjectMeta(name=namespace, labels=self._labels("namespace")),
         )
 
-        self._config_map("coordinator-envoy-config", COORDINATOR_CONFIG_MAP, worker_envoy)
-        self._config_map("service-envoy-config", SERVICE_CONFIG_MAP, coordinator_envoy)
-
+        k8s.KubeConfigMap(
+            self,
+            "coordinator-envoy-config",
+            metadata=k8s.ObjectMeta(name=COORDINATOR_CONFIG_MAP, namespace=namespace),
+            data={"envoy.yaml": coordinator_bootstrap, "lds.yaml": lds, "cds.yaml": cds},
+        )
+        self._config_map("calculator-envoy-config", CALCULATOR_CONFIG_MAP, calculator_envoy)
+        k8s.KubeConfigMap(
+            self,
+            "services-config",
+            metadata=k8s.ObjectMeta(name=SERVICES_CONFIG_MAP, namespace=namespace),
+            data={"services.yaml": services},
+        )
 
         for calc in ("adder", "multiplier"):
             self._service(calc, 8080)
@@ -31,7 +49,7 @@ class CalcMesh(Chart):
                 f"{calc}:{image_tag}",
                 replicas=1,
                 port=APP_PORT,
-                sidecar=SERVICE_CONFIG_MAP,
+                sidecar=CALCULATOR_CONFIG_MAP,
                 sidecar_port=8080,
                 env={"PORT": str(APP_PORT)},
             )
@@ -44,15 +62,28 @@ class CalcMesh(Chart):
             port=APP_PORT,
             sidecar=COORDINATOR_CONFIG_MAP,
             sidecar_port=9001,
-            env={
-                "PORT": str(APP_PORT),
-                "CALC_URL": "http://127.0.0.1:9001",
-                "CONTROL_PLANE_URL": "http://controlplane:18000",
-            },
+            xds=True,
+            env={"PORT": str(APP_PORT), "CALC_URL": "http://127.0.0.1:9001"},
+        )
+
+        self._service("extproc", 18001)
+        self._deployment(
+            "extproc",
+            f"controlplane:{image_tag}",
+            replicas=1,
+            port=18001,
+            command=["python", "-u", "src/extproc.py"],
         )
 
         self._service("controlplane", 18000)
-        self._deployment("controlplane", f"controlplane:{image_tag}", replicas=1, port=18000)
+        self._deployment(
+            "controlplane",
+            f"controlplane:{image_tag}",
+            replicas=1,
+            port=18000,
+            env={"SERVICES_FILE": "/etc/calcmesh/services.yaml"},
+            mount=(SERVICES_CONFIG_MAP, "/etc/calcmesh"),
+        )
 
 
     def _labels(self, component):
@@ -69,20 +100,35 @@ class CalcMesh(Chart):
             data={"envoy.yaml": body},
         )
 
-    def _deployment(self, name, image, *, replicas, port, sidecar=None, sidecar_port=None, env=None):
+    def _deployment(self, name, image, *, replicas, port, sidecar=None, sidecar_port=None, env=None, xds=False, mount=None, command=None):
+        volumes = []
+        mounts = []
+        if mount:
+            config_map, path = mount
+            mounts.append(k8s.VolumeMount(name="services", mount_path=path))
+            volumes.append(
+                k8s.Volume(name="services", config_map=k8s.ConfigMapVolumeSource(name=config_map))
+            )
+
         containers = [
             k8s.Container(
                 name=name,
                 image=image,
                 image_pull_policy="IfNotPresent",
+                command=command,
                 ports=[k8s.ContainerPort(container_port=port)],
                 env=[k8s.EnvVar(name=k, value=v) for k, v in (env or {}).items()],
+                volume_mounts=mounts or None,
             )
         ]
-        volumes = []
         if sidecar:
-            containers.append(envoy_container(sidecar_port))
+            containers.append(envoy_container(sidecar_port, xds=xds))
             volumes.append(config_volume(sidecar))
+        init_containers = []
+        if xds:
+            containers.append(syncer_container(f"controlplane:{self.image_tag}"))
+            volumes.append(xds_volume())
+            init_containers.append(xds_seed_container())
 
         k8s.KubeDeployment(
             self,
@@ -93,7 +139,11 @@ class CalcMesh(Chart):
                 selector=k8s.LabelSelector(match_labels=self._labels(name)),
                 template=k8s.PodTemplateSpec(
                     metadata=k8s.ObjectMeta(labels=self._labels(name)),
-                    spec=k8s.PodSpec(containers=containers, volumes=volumes or None),
+                    spec=k8s.PodSpec(
+                        init_containers=init_containers or None,
+                        containers=containers,
+                        volumes=volumes or None,
+                    ),
                 ),
             ),
         )
