@@ -156,3 +156,12 @@ subtractor:
     assert "subtractor" in of_kind(out, "Service")
     pod = of_kind(out, "Deployment")["subtractor"]["spec"]["template"]["spec"]
     assert [c["name"] for c in pod["containers"]] == ["subtractor", "envoy"]
+
+
+def test_calculator_services_are_headless_so_envoy_sees_every_pod(manifest):
+    for name in ("adder", "multiplier"):
+        assert of_kind(manifest, "Service")[name]["spec"]["clusterIP"] == "None"
+
+
+def test_the_coordinator_service_keeps_its_cluster_ip(manifest):
+    assert "clusterIP" not in of_kind(manifest, "Service")["coordinator"]["spec"]

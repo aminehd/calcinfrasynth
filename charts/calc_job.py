@@ -56,7 +56,7 @@ class CalcMesh(Chart):
         )
 
         for calc in calculators(services):
-            self._service(calc, 8080)
+            self._service(calc, 8080, headless=True)
             self._deployment(
                 calc,
                 f"{calc}:{image_tag}",
@@ -161,13 +161,14 @@ class CalcMesh(Chart):
             ),
         )
 
-    def _service(self, name, port, node_port=None):
+    def _service(self, name, port, node_port=None, headless=False):
         k8s.KubeService(
             self,
             f"{name}-service",
             metadata=k8s.ObjectMeta(name=name, namespace=self.ns, labels=self._labels(name)),
             spec=k8s.ServiceSpec(
                 type="NodePort" if node_port else None,
+                cluster_ip="None" if headless else None,
                 selector=self._labels(name),
                 ports=[
                     k8s.ServicePort(
