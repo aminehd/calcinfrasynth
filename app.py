@@ -5,7 +5,7 @@ from cdk8s import App
 
 from charts.calc_job import CalcMesh
 
-CONFIG = "../calccontrolplane/config"
+CONFIG = "../calcnetworking/config"
 
 
 def main():

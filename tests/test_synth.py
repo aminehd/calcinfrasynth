@@ -9,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from charts.calc_job import CalcMesh
 
-CONFIG = ROOT.parent / "calccontrolplane" / "config"
+CONFIG = ROOT.parent / "calcnetworking" / "config"
 
 
 @pytest.fixture(scope="module")
