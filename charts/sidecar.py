@@ -12,7 +12,7 @@ def syncer_container(image):
         name="syncer",
         image=image,
         image_pull_policy="IfNotPresent",
-        command=["python", "-u", "src/syncer.py"],
+        command=["python", "-u", "src/cmd/syncer.py"],
         env=[
             k8s.EnvVar(name="CONTROL_PLANE_URL", value="http://controlplane:18000"),
             k8s.EnvVar(name="XDS_DIR", value="/etc/envoy/xds"),

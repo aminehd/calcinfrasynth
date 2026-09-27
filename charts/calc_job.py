@@ -85,7 +85,7 @@ class CalcMesh(Chart):
             f"controlplane:{image_tag}",
             replicas=1,
             port=18001,
-            command=["python", "-u", "src/extproc.py"],
+            command=["python", "-u", "src/cmd/extproc.py"],
         )
 
         self._service("controlplane", 18000)
