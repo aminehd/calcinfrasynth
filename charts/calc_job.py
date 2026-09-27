@@ -16,6 +16,19 @@ COORDINATOR_NODE_PORT = 30000
 APP_PORT = 8081
 
 
+def calculators(services):
+    names, current = [], None
+    for raw in services.splitlines():
+        line = raw.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            current = line.rstrip(":")
+        elif current and line.strip().startswith("op:"):
+            names.append(current)
+    return names
+
+
 class CalcMesh(Chart):
     def __init__(self, scope, id, *, namespace, image_tag, coordinator_bootstrap, calculator_envoy, lds, cds, services):
         super().__init__(scope, id, namespace=namespace)
@@ -42,7 +55,7 @@ class CalcMesh(Chart):
             data={"services.yaml": services},
         )
 
-        for calc in ("adder", "multiplier"):
+        for calc in calculators(services):
             self._service(calc, 8080)
             self._deployment(
                 calc,

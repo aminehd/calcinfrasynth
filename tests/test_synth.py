@@ -121,3 +121,38 @@ def test_calculators_need_no_init_container(manifest):
     for name in ("adder", "multiplier"):
         pod = of_kind(manifest, "Deployment")[name]["spec"]["template"]["spec"]
         assert "initContainers" not in pod
+
+
+def test_calculators_come_from_services_yaml():
+    from charts.calc_job import calculators
+
+    assert calculators((CONFIG / "services.yaml").read_text()) == ["adder", "multiplier"]
+    assert calculators("adder:\n  op: add\ncoordinator:\n  port: 8081\n") == ["adder"]
+
+
+def test_a_new_service_needs_only_a_services_yaml_entry():
+    extra = (CONFIG / "services.yaml").read_text() + """
+subtractor:
+  op: sub
+  cluster: subtractor
+  address: subtractor
+  port: 8080
+  timeout: 7s
+  retries: 2
+"""
+    chart = CalcMesh(
+        cdk8s_testing.app(),
+        "calcmesh",
+        namespace="calcmesh-test",
+        image_tag="test",
+        coordinator_bootstrap=(CONFIG / "coordinator" / "bootstrap.yaml").read_text(),
+        calculator_envoy=(CONFIG / "calculator" / "envoy.yaml").read_text(),
+        lds=(CONFIG / "coordinator" / "lds.yaml").read_text(),
+        cds=(CONFIG / "coordinator" / "cds.yaml").read_text(),
+        services=extra,
+    )
+    out = cdk8s_testing.synth(chart)
+    assert "subtractor" in of_kind(out, "Deployment")
+    assert "subtractor" in of_kind(out, "Service")
+    pod = of_kind(out, "Deployment")["subtractor"]["spec"]["template"]["spec"]
+    assert [c["name"] for c in pod["containers"]] == ["subtractor", "envoy"]
