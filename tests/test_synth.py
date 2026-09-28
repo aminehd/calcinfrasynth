@@ -99,7 +99,7 @@ def test_control_plane_reads_the_mounted_services_file(manifest):
 
 def test_extproc_runs_the_ext_proc_server(manifest):
     pod = of_kind(manifest, "Deployment")["extproc"]["spec"]["template"]["spec"]
-    assert pod["containers"][0]["command"] == ["python", "-u", "src/cmd/extproc.py"]
+    assert pod["containers"][0]["command"] == ["python", "-u", "-m", "envoydataplane.external_processor"]
     assert pod["containers"][0]["ports"][0]["containerPort"] == 18001
 
 
